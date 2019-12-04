@@ -39,43 +39,16 @@ namespace AuthN {
 
 namespace {
 
-// The JWT audience key name
+// The JWT audience key name.
 static const std::string kJwtAudienceKey = "aud";
-// The JWT issuer key name
+// The JWT issuer key name.
 static const std::string kJwtIssuerKey = "iss";
-// The key name for the original claims in an exchanged token
+// The JWT subject key name.
+static const std::string kJwtSubjectKey = "sub";
+// The JWT authorized presenter key name.
+static const std::string kJwtPresenterKey = "azp";
+// The key name for the original claims in an exchanged token.
 static const std::string kExchangedTokenOriginalPayload = "original_claims";
-
-// Extract JWT claim as a string list.
-// This function only extracts string and string list claims.
-// A string claim is extracted as a string list of 1 item.
-// A string claim with whitespace is extracted as a string list with each
-// sub-string delimited with the whitespace.
-// void ExtractStringList(const std::string& key, const Envoy::Json::Object&
-// obj,
-//                        std::vector<std::string>& list) {
-//   // First, try as string
-//   try {
-//     // Try as string, will throw execption if object type is not string.
-//     const std::vector<std::string> keys =
-//         absl::StrSplit(obj.getString(key), ' ', absl::SkipEmpty());
-//     for (const auto& key : keys) {
-//       list.push_back(key);
-//     }
-//     return;
-//   } catch (Json::Exception& e) {
-//     // Not convertable to string
-//   }
-//   // Next, try as string array
-//   try {
-//     std::vector<std::string> vector = obj.getStringArray(key);
-//     for (const std::string v : vector) {
-//       list.push_back(v);
-//     }
-//   } catch (Json::Exception& e) {
-//     // Not convertable to string array
-//   }
-// }
 
 // Helper function to set a key/value pair into Struct.
 void setKeyValue(ProtobufWkt::Struct& data, const std::string& key,
@@ -126,79 +99,33 @@ const std::string getClaimValue(const ProtobufWkt::Struct& claim_structs,
 // Returns true if the attribute populated to authn filter succeeds.
 // Envoy jwt filter already set each claim values into the struct.
 // https://github.com/envoyproxy/envoy/blob/master/source/extensions/filters/http/jwt_authn/verifier.cc#L120
-bool AuthnV2Filter::processJwt(const std::string& jwt,
-                               const ProtobufWkt::Struct& claim_structs,
+bool AuthnV2Filter::processJwt(const ProtobufWkt::Struct& claim_structs,
                                ProtobufWkt::Struct& authn_data) {
-  ENVOY_LOG(info, "abc {}\n{}\n{}", claim_structs.DebugString(), jwt,
-            authn_data.DebugString());
-  // Envoy::Json::ObjectSharedPtr json_obj;
-  // try {
-  //   json_obj = Json::Factory::loadFromString(jwt);
-  // } catch (...) {
-  //   return false;
-  // }
+  ENVOY_LOG(debug, "processJwt the original claim data {}\n",
+            claim_structs.DebugString());
 
-  // ProtobufWkt::Struct claim_structs;
-  // auto claims = &claim_structs.fields();
-  // // Extract claims as string lists
-  // // json_obj->iterate([json_obj, claims](const std::string& key,
-  // //                                      const Json::Object&) -> bool {
-  // //   // In current implementation, only string/string list objects are
-  // //   extracted std::vector<std::string> list; ExtractStringList(key,
-  // //   *json_obj, list); for (auto s : list) {
-  // // claims->at(key].mutable_list_value()->add_values()->set_string_value(s);
-  // //   }
-  // //   return true;
-  // // });
+  // request.auth.principal
+  const std::string iss = getClaimValue(claim_structs, kJwtIssuerKey);
+  const std::string sub = getClaimValue(claim_structs, kJwtSubjectKey);
+  if (!iss.empty() && !sub.empty()) {
+    setKeyValue(authn_data, istio::utils::AttributeName::kRequestAuthPrincipal,
+                iss + "/" + sub);
+  }
+
+  const std::string azp = getClaimValue(claim_structs, kJwtPresenterKey);
+  if (!azp.empty()) {
+    setKeyValue(authn_data, istio::utils::AttributeName::kRequestAuthPresenter,
+                azp);
+  }
+
+  // request.auth.audiences
   const std::string aud = getClaimValue(claim_structs, kJwtAudienceKey);
   if (!aud.empty()) {
     setKeyValue(authn_data, istio::utils::AttributeName::kRequestAuthAudiences,
                 aud);
   }
 
-  // if (claims->find(kJwtAudienceKey) != claims->end()) {
-  //   // TODO(diemtvu): this should be send as repeated field once mixer
-  //   // support string_list (https://github.com/istio/istio/issues/2802) For
-  //   // now, just use the first value.
-  //   const auto& aud_values =
-  //   claims->at(kJwtAudienceKey).list_value().values(); if
-  //   (!aud_values.empty()) {
-  //     setKeyValue(authn_data,
-  //                 istio::utils::AttributeName::kRequestAuthAudiences,
-  //                 aud_values[0].string_value());
-  //   }
-  // }
-
-  // // request.auth.principal
-  // if (claims->find("iss") != claims->end() &&
-  //     claims->find("sub") != claims->end()) {
-  //   setKeyValue(
-  //       authn_data, istio::utils::AttributeName::kRequestAuthPrincipal,
-  //       claims->at("iss").list_value().values().Get(0).string_value() + "/" +
-  //           claims->at("sub").list_value().values().Get(0).string_value());
-  // }
-
-  const std::string iss = getClaimValue(claim_structs, "iss");
-  const std::string sub = getClaimValue(claim_structs, "sub");
-  if (!iss.empty() && !sub.empty()) {
-    setKeyValue(authn_data, istio::utils::AttributeName::kRequestAuthPrincipal,
-                iss + "/" + sub);
-  }
-
-  const std::string azp = getClaimValue(claim_structs, "azp");
-  if (!azp.empty()) {
-    setKeyValue(authn_data, istio::utils::AttributeName::kRequestAuthPresenter,
-                azp);
-  }
-  // // request.auth.audiences
-  // if (claims->find("azp") != claims->end()) {
-  //   setKeyValue(authn_data,
-  //   istio::utils::AttributeName::kRequestAuthPresenter,
-  //               claims->at("azp").list_value().values().Get(0).string_value());
-  // }
-
-  // request.auth.claims
-  // all claims must be encoded as list of strings.
+  // request.auth.claims, all claims must be encoded as list of strings.
   ProtobufWkt::Struct claim_as_list;
   for (const auto& field : claim_structs.fields()) {
     const std::string& key = field.first;
@@ -223,8 +150,10 @@ bool AuthnV2Filter::processJwt(const std::string& jwt,
       .MergeFrom(claim_as_list);
 
   // request.auth.raw_claims
+  std::string jwt_payload;
+  Protobuf::util::MessageToJsonString(claim_structs, &jwt_payload);
   setKeyValue(authn_data, istio::utils::AttributeName::kRequestAuthRawClaims,
-              jwt);
+              jwt_payload);
   return true;
 }
 
@@ -263,7 +192,6 @@ AuthnV2Filter::extractJwtFromMetadata(
 }
 
 FilterHeadersStatus AuthnV2Filter::decodeHeaders(HeaderMap&, bool) {
-  ENVOY_LOG(debug, "AuthnV2Filter::decodeHeaders start\n");
   auto& metadata = decoder_callbacks_->streamInfo().dynamicMetadata();
   auto& authn_data =
       (*metadata.mutable_filter_metadata())[Utils::IstioFilterName::kAuthnV2];
@@ -278,10 +206,9 @@ FilterHeadersStatus AuthnV2Filter::decodeHeaders(HeaderMap&, bool) {
             "extract jwt metadata {} \njwt payload issuer {}, payload\n{}\n",
             metadata.DebugString(), result.first, jwt_payload);
   if (result.first != "") {
-    // const auto& jwt_struct =
-    processJwt(jwt_payload, *result.second, authn_data);
+    processJwt(*result.second, authn_data);
   }
-  ENVOY_LOG(debug, "Saved Dynamic Metadata:\n{}",
+  ENVOY_LOG(debug, "saved dynamic metadata:\n{}",
             Envoy::MessageUtil::getYamlStringFromMessage(
                 decoder_callbacks_->streamInfo()
                     .dynamicMetadata()
@@ -289,19 +216,6 @@ FilterHeadersStatus AuthnV2Filter::decodeHeaders(HeaderMap&, bool) {
                     .at(Utils::IstioFilterName::kAuthnV2),
                 true, true));
   return FilterHeadersStatus::Continue;
-}
-
-FilterDataStatus AuthnV2Filter::decodeData(Buffer::Instance&, bool) {
-  return FilterDataStatus::Continue;
-}
-
-FilterTrailersStatus AuthnV2Filter::decodeTrailers(HeaderMap&) {
-  return FilterTrailersStatus::Continue;
-}
-
-void AuthnV2Filter::setDecoderFilterCallbacks(
-    StreamDecoderFilterCallbacks& callbacks) {
-  decoder_callbacks_ = &callbacks;
 }
 
 }  // namespace AuthN

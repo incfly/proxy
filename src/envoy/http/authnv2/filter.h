@@ -72,14 +72,20 @@ class AuthnV2Filter : public StreamDecoderFilter,
 
   // Http::StreamDecoderFilter
   FilterHeadersStatus decodeHeaders(HeaderMap& headers, bool) override;
-  FilterDataStatus decodeData(Buffer::Instance&, bool) override;
-  FilterTrailersStatus decodeTrailers(HeaderMap&) override;
+  FilterDataStatus decodeData(Buffer::Instance&, bool) override {
+    return FilterDataStatus::Continue;
+  }
+  FilterTrailersStatus decodeTrailers(HeaderMap&) override {
+    return FilterTrailersStatus::Continue;
+  }
   void setDecoderFilterCallbacks(
-      StreamDecoderFilterCallbacks& callbacks) override;
+      StreamDecoderFilterCallbacks& callbacks) override {
+    decoder_callbacks_ = &callbacks;
+  }
 
  private:
   // Returns true if the attribute populated to authn filter succeeds.
-  bool processJwt(const std::string& jwt, const ProtobufWkt::Struct& jwt_struct,
+  bool processJwt(const ProtobufWkt::Struct& jwt_struct,
                   ProtobufWkt::Struct& authn_data);
 
   // Determinstically select from jwt entry from the Jwt filter metadata.
