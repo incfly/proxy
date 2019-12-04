@@ -198,10 +198,29 @@ bool AuthnV2Filter::processJwt(const std::string& jwt,
   // }
 
   // request.auth.claims
+  // all claims must be encoded as list of strings.
+  ProtobufWkt::Struct claim_as_list;
+  for (const auto& field : claim_structs.fields()) {
+    const std::string& key = field.first;
+    const auto& val = field.second;
+    ProtobufWkt::Value::KindCase kind = val.kind_case();
+    ProtobufWkt::Value val_as_list;
+    switch (kind) {
+      case ProtobufWkt::Value::kListValue:
+        (*claim_as_list.mutable_fields())[key] = val;
+        break;
+      default:
+        if (!val.string_value().empty()) {
+          val_as_list.mutable_list_value()->add_values()->set_string_value(
+              val.string_value());
+          (*claim_as_list.mutable_fields())[key] = val_as_list;
+        }
+    }
+  }
   (*(*authn_data
           .mutable_fields())[istio::utils::AttributeName::kRequestAuthClaims]
         .mutable_struct_value())
-      .MergeFrom(claim_structs);
+      .MergeFrom(claim_as_list);
 
   // request.auth.raw_claims
   setKeyValue(authn_data, istio::utils::AttributeName::kRequestAuthRawClaims,
