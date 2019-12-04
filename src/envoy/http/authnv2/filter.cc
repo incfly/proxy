@@ -17,6 +17,7 @@
 
 #include "common/common/logger.h"
 #include "common/http/utility.h"
+#include "common/json/json_loader.h"
 #include "extensions/filters/http/well_known_names.h"
 
 #include "src/envoy/http/authnv2/filter.h"
@@ -27,7 +28,6 @@
 #include "absl/strings/match.h"
 #include "absl/strings/str_split.h"
 
-#include "common/json/json_loader.h"
 #include "google/protobuf/struct.pb.h"
 #include "include/istio/utils/attribute_names.h"
 #include "src/envoy/http/jwt_auth/jwt.h"

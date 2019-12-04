@@ -97,6 +97,13 @@ class AuthnV2FilterTest : public testing::Test {
     filter_.setDecoderFilterCallbacks(decoder_callbacks_);
   }
 
+  ProtobufWkt::Struct extractOriginalClaim(const ProtobufWkt::Struct& data) {
+    ProtobufWkt::Struct raw_claim;
+    TestUtility::loadFromJson(
+        data.fields().at("request.auth.raw_claims").string_value(), raw_claim);
+    return raw_claim;
+  }
+
   // validate the authn filter metadata is as expected as input specified.
   void validate(const std::string& expected_authn_yaml) {
     ProtobufWkt::Struct expected_authn_data;
@@ -104,11 +111,14 @@ class AuthnV2FilterTest : public testing::Test {
     ProtobufWkt::Struct authn_data =
         stream_info_.dynamicMetadata().filter_metadata().at(
             Utils::IstioFilterName::kAuthnV2);
-    // raw_claims encoded raw json, serialization is undeterministic.
-    // TODO: find a way to test before merge.
-    std::string authn_raw_claim =
-        (*authn_data.mutable_fields())["request.auth.raw_claims"]
-            .string_value();
+
+    // special handling the raw claims field since the serialization of the
+    // original jwt from struct to json is not deterministic.
+    const auto& expected_raw_claim = extractOriginalClaim(expected_authn_data);
+    EXPECT_EQ(expected_raw_claim.DebugString(),
+              authn_data.fields().at("request.auth.raw_claims").DebugString());
+    // Now erase.
+    expected_authn_data.mutable_fields()->erase("request.auth.raw_claims");
     authn_data.mutable_fields()->erase("request.auth.raw_claims");
     EXPECT_EQ(expected_authn_data.DebugString(), authn_data.DebugString());
   }
@@ -137,7 +147,8 @@ TEST_F(AuthnV2FilterTest, BasicAllAttributes) {
     - https://example.com
 source.principal: cluster.local/ns/foo/sa/bar
 request.auth.principal: https://example.com/test@example.com
-request.auth.audiences: example_service)EOF");
+request.auth.audiences: example_service
+request.auth.raw_claims: "{\"iss\":\"https://example.com\",\"exp\":2001001001,\"sub\":\"test@example.com\",\"aud\":\"example_service\"}")EOF");
 }
 
 TEST_F(AuthnV2FilterTest, JwtsSelectedByIssuerLexicalOrder) {
@@ -159,7 +170,8 @@ TEST_F(AuthnV2FilterTest, JwtsSelectedByIssuerLexicalOrder) {
   iss:
     - aa.com
 source.principal: cluster.local/ns/foo/sa/bar
-request.auth.principal: aa.com/test@aa.com)EOF");
+request.auth.principal: aa.com/test@aa.com
+request.auth.raw_claims: "{\"iss\":\"aa.com\",\"sub\":\"test@aa.com\"})EOF");
 }
 
 TEST_F(AuthnV2FilterTest, EmptySAN) {
@@ -175,7 +187,8 @@ TEST_F(AuthnV2FilterTest, EmptySAN) {
     - test@aa.com
   iss:
     - aa.com
-request.auth.principal: aa.com/test@aa.com)EOF");
+request.auth.principal: aa.com/test@aa.com
+request.auth.raw_claims: "{\"iss\":\"aa.com\",\"sub\":\"test@aa.com\"})EOF");
 }
 
 TEST_F(AuthnV2FilterTest, EmptyJwt) {
@@ -192,11 +205,6 @@ TEST_F(AuthnV2FilterTest, EmptySanEmptyJwt) {
             filter_.decodeHeaders(request_headers_, true));
   validate("{}");
 }
-
-// This test case ensures the filter does not reject the request if the
-// attributes extraction fails.
-// TODO: implement this one.
-TEST_F(AuthnV2FilterTest, MalformJwtReturnContinueState) {}
 
 }  // namespace
 }  // namespace AuthN
